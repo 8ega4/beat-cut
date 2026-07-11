@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>BeatCut — クリップを入れる。ビートに刻む。</title>
+  <meta name="description" content="動画クリップを最大5本入れると、曲のビートに合わせて自動カット編集。SNS用の縦型MVをブラウザだけで生成。動画はサーバーに送信されません。" />
+  <meta property="og:title" content="BeatCut — ビートに合わせて自動カット編集" />
+  <meta property="og:description" content="クリップを入れて曲を選ぶだけ。15秒/30秒の縦型MVをブラウザ内で生成してダウンロード。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="logo">BEAT<span>CUT</span></div>
+    <p class="tagline">クリップを入れる。ビートに刻む。</p>
+    <p class="privacy-note">🔒 動画・音声はブラウザ内で処理され、サーバーには送信されません</p>
+  </header>
+
+  <main id="app">
+    <div class="columns">
+      <div class="flow">
+
+        <section class="step" id="step-clips">
+          <h2><em>①</em> 動画を入れる</h2>
+          <p class="hint">mp4 / mov / webm を2〜5本。順番は並び替えできます。</p>
+          <div id="dropzone" class="dropzone" tabindex="0">
+            <input type="file" id="clip-input" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" multiple hidden />
+            <div class="dz-inner">
+              <div class="dz-icon">⇪</div>
+              <strong>タップして選ぶ / ドラッグ&ドロップ</strong>
+              <span class="dz-sub">2〜5本 (残り <b id="clip-remain">5</b> 本)</span>
+            </div>
+          </div>
+          <ul id="clip-list" class="clip-list"></ul>
+          <p class="error" id="clip-error" hidden></p>
+        </section>
+
+        <section class="step" id="step-music">
+          <h2><em>②</em> 曲とエフェクトを選ぶ</h2>
+          <div class="track-grid" id="preset-list"></div>
+          <div class="upload-row">
+            <label class="btn ghost" for="audio-input">自分の曲を使う (mp3/wav)
+              <input type="file" id="audio-input" accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" hidden />
+            </label>
+            <span class="muted" id="audio-status"></span>
+          </div>
+
+          <div id="beat-panel" class="beat-panel" hidden>
+            <div class="beat-head">
+              <span id="track-title" class="track-title"></span>
+              <span class="bpm-badge"><b id="bpm-value">--</b> BPM</span>
+            </div>
+            <canvas id="waveform" class="waveform" width="640" height="90"></canvas>
+            <details id="tempo-fix">
+              <summary>ビートが合わない? — BPM手動 / タップテンポ</summary>
+              <div class="tempo-tools">
+                <label>BPM <input type="number" id="bpm-input" min="40" max="220" step="0.1" /></label>
+                <button class="btn small" id="tap-btn">タップ (曲に合わせて4回以上)</button>
+                <label>ズレ補正 <input type="range" id="offset-input" min="-0.5" max="0.5" step="0.005" value="0" /> <span id="offset-label">0ms</span></label>
+              </div>
+            </details>
+          </div>
+
+          <div class="control-row">
+            <div class="seg" role="radiogroup" aria-label="出力尺">
+              <button class="seg-btn active" data-dur="15">15秒</button>
+              <button class="seg-btn" data-dur="30">30秒</button>
+            </div>
+          </div>
+
+          <div class="theme-row" id="theme-row"></div>
+          <label class="intensity">強度
+            <input type="range" id="intensity" min="0" max="100" value="70" />
+            <span id="intensity-label">70%</span>
+          </label>
+        </section>
+
+        <section class="step" id="step-export">
+          <h2><em>③</em> 書き出す</h2>
+          <div class="export-box">
+            <p class="warn" id="tab-warn">⚠ 書き出し中に他のタブへ切り替えると録画が止まります。終わるまでこのタブを開いたままにしてください。</p>
+            <p class="warn danger" id="no-export-warn" hidden>この環境(iOS Safariなど)は書き出しに対応していません。プレビューまで利用できます。書き出しはPCのChrome / Edge / Firefoxを推奨します。</p>
+            <button class="btn primary big" id="export-btn" disabled>▷ 書き出す (webm)</button>
+            <div class="progress" id="progress" hidden><div class="progress-bar" id="progress-bar"></div><span id="progress-label">0%</span></div>
+            <div id="export-done" class="export-done" hidden>
+              <a class="btn primary" id="download-link" download="beatcut.webm">↓ ダウンロード</a>
+              <a class="btn ghost" id="share-x" target="_blank" rel="noopener">𝕏 でシェア</a>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <aside class="preview-pane" id="preview-pane">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <canvas id="preview-canvas" width="540" height="960"></canvas>
+          <div class="phone-overlay" id="preview-overlay">
+            <button class="play-big" id="play-btn" aria-label="再生">▶</button>
+          </div>
+        </div>
+        <div class="preview-controls">
+          <button class="btn small" id="restart-btn" title="最初から">⟲</button>
+          <div class="timebar"><div class="timebar-fill" id="timebar-fill"></div></div>
+          <button class="btn small" id="shuffle-btn" title="割り当てを引き直す">⤨ シャッフル</button>
+        </div>
+        <p class="preview-note" id="preview-note">① と ② を完了するとプレビューできます</p>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>BeatCut — すべての処理はあなたのブラウザ内で完結します。アップロードした動画・音声が外部に送信されることはありません。</p>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
