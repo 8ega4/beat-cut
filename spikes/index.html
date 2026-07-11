@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>beat-cut spikes</title>
+<style>
+  body { font: 14px/1.5 monospace; background: #111; color: #ddd; padding: 16px; }
+  button { font: inherit; padding: 8px 16px; margin-right: 8px; }
+  #log { white-space: pre-wrap; margin-top: 12px; color: #8c8; }
+  #results { white-space: pre-wrap; margin-top: 12px; color: #fc6; }
+</style>
+</head>
+<body>
+<h1>beat-cut spikes</h1>
+<div>
+  <button id="runAll">Run All</button>
+  <button id="run1">SP1 audio-sync</button>
+  <button id="run2">SP2 video-seek</button>
+  <button id="run3">SP3 beat-detect</button>
+</div>
+<div id="log"></div>
+<pre id="results"></pre>
+<script type="module">
+import { run as sp1 } from './sp1-audio-sync.js';
+import { run as sp2 } from './sp2-video-seek.js';
+import { run as sp3 } from './sp3-beat-detect.js';
+
+const logEl = document.getElementById('log');
+const resEl = document.getElementById('results');
+const log = (msg) => { logEl.textContent += msg + '\n'; console.log(msg); };
+window.__SPIKE_RESULTS = {};
+window.__SPIKE_DONE = false;
+
+async function runOne(name, fn) {
+  log(`=== ${name} start ===`);
+  try {
+    const r = await fn(log);
+    window.__SPIKE_RESULTS[name] = r;
+    log(`=== ${name} done ===`);
+  } catch (e) {
+    window.__SPIKE_RESULTS[name] = { error: String(e && e.stack || e) };
+    log(`=== ${name} FAILED: ${e} ===`);
+  }
+  resEl.textContent = JSON.stringify(window.__SPIKE_RESULTS, null, 2);
+}
+
+document.getElementById('run1').onclick = () => runOne('sp1', sp1);
+document.getElementById('run2').onclick = () => runOne('sp2', sp2);
+document.getElementById('run3').onclick = () => runOne('sp3', sp3);
+document.getElementById('runAll').onclick = async () => {
+  window.__SPIKE_DONE = false;
+  await runOne('sp3', sp3);   // 速い順: 数秒
+  await runOne('sp2', sp2);   // ~15秒
+  await runOne('sp1', sp1);   // ~65秒
+  window.__SPIKE_DONE = true;
+  log('ALL DONE');
+};
+</script>
+</body>
+</html>
