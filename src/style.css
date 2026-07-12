@@ -16,6 +16,9 @@
 
 * { box-sizing: border-box; }
 
+/* display:flex等の指定が hidden 属性に勝ってしまうのを防ぐ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background:
