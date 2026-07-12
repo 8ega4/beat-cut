@@ -237,6 +237,20 @@ export class Renderer {
     ctx.restore();
   }
 
+  // 全クリップのデコーダを起こしておく(書き出し前のプライム)
+  async prime(): Promise<void> {
+    const s = this.getState();
+    if (!s.plan) return;
+    const firstUse = new Map<number, number>();
+    for (const c of s.plan.cuts) {
+      if (!firstUse.has(c.clipIdx)) firstUse.set(c.clipIdx, c.srcStart);
+    }
+    for (const [idx, t] of firstUse) {
+      const clip = s.clips[idx];
+      if (clip) await this.seekClip(clip.video, t);
+    }
+  }
+
   // 停止中に1フレームだけ描く(テーマ切替の即時反映用)
   async drawStill(): Promise<void> {
     const s = this.getState();

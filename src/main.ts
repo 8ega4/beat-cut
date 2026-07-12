@@ -492,6 +492,7 @@ exportBtn.addEventListener('click', async () => {
     link.download = `beatcut-${state.duration}s.webm`;
     exportDone.hidden = false;
     progressLabel.textContent = `完了 (${(blob.size / 1024 / 1024).toFixed(1)}MB)`;
+    void renderer.drawStill(); // プレビューを復元
   } catch (err) {
     progressLabel.textContent = `書き出しに失敗しました: ${err instanceof Error ? err.message : err}`;
   } finally {

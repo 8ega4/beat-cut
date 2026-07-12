@@ -63,12 +63,39 @@ export async function exportVideo(renderer: Renderer, opts: ExportOptions): Prom
   const prevEnded = renderer.onEnded;
   const prevTime = renderer.onTime;
   try {
+    // 全クリップを事前デコード + エンコーダのウォームアップ(捨て録り)。
+    // 初回書き出しでエンコーダ初期化中のフレーム落ちが起きるのを防ぐ
+    await renderer.prime();
+    const warm = new MediaRecorder(new MediaStream([vtrack]), {
+      mimeType: mime,
+      videoBitsPerSecond: 4_000_000,
+    });
+    const warmStopped = new Promise<void>((r) => (warm.onstop = () => r()));
+    warm.start();
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => setTimeout(r, 33));
+      vtrack.requestFrame();
+    }
+    warm.stop();
+    await warmStopped;
+
+    // 本録画: キャプチャは30fpsにペーシングしてエンコーダ負荷を安定させる
+    let lastCap = 0;
     rec.start(1000);
     await new Promise<void>((resolve, reject) => {
       renderer.onEnded = () => resolve();
       renderer.onTime = (t) => opts.onProgress(Math.min(1, t / opts.duration));
       renderer
-        .start({ extraAudioOut: dest, onFrameDrawn: () => vtrack.requestFrame() })
+        .start({
+          extraAudioOut: dest,
+          onFrameDrawn: () => {
+            const now = performance.now();
+            if (now - lastCap >= 31) {
+              lastCap = now;
+              vtrack.requestFrame();
+            }
+          },
+        })
         .catch(reject);
     });
     rec.stop();
