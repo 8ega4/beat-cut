@@ -14,6 +14,12 @@
       "port": 4173
     },
     {
+      "name": "ghpages-sim",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4174", "--directory", "/tmp/ghpages-sim"],
+      "port": 4174
+    },
+    {
       "name": "dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
