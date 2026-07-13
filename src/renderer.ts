@@ -188,7 +188,8 @@ export class Renderer {
     const v = clip?.video;
 
     const period = 60 / s.track!.bpm;
-    let phase = ((t - s.track!.beatOffsetSec) % period) / period;
+    const rel = t - s.track!.beatOffsetSec;
+    let phase = (rel % period) / period;
     if (phase < 0) phase += 1;
 
     const theme = themeById(s.theme);
@@ -197,6 +198,7 @@ export class Renderer {
       h,
       t,
       beatPhase: phase,
+      beatIndex: Math.floor(rel / period),
       beatPeriod: period,
       cutAge: t - cut.start,
       cutProgress: Math.min(1, (t - cut.start) / Math.max(0.001, cut.end - cut.start)),

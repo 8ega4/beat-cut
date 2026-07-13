@@ -8,6 +8,7 @@ export interface FrameInfo {
   h: number;
   t: number;           // 出力タイムライン秒
   beatPhase: number;   // 現在ビート内の位相 0..1
+  beatIndex: number;   // 曲頭からのビート番号(バースト頻度の決定論的判定用)
   beatPeriod: number;  // 秒
   cutAge: number;      // カット開始からの秒
   cutProgress: number; // カット内の進行 0..1
@@ -21,8 +22,31 @@ export interface Theme {
   id: ThemeId;
   label: string;
   desc: string;
+  // 強度スライダーが効くテーマか(false のテーマ選択中はスライダーを非表示にする)
+  usesIntensity: boolean;
   beatsPerCut: (bpm: number) => number;
   render(ctx: CanvasRenderingContext2D, drawVideo: DrawVideo, f: FrameInfo): void;
+}
+
+// 強度 = エフェクトの視覚パラメータの倍率。各テーマは対象パラメータを
+// min/max 定数で宣言し、min + (max - min) × 強度 の線形補間で使う。
+// 0% = カラーグレードのみ(ビート同期モーション消滅)、100% = 最大演出。
+// カット割りの密度・編集構造には影響させない。
+export interface ParamRange {
+  min: number;
+  max: number;
+}
+
+function lerpParam(r: ParamRange, intensity: number): number {
+  return r.min + (r.max - r.min) * intensity;
+}
+
+// ビート番号 → [0,1) の決定論ハッシュ(プレビューと書き出しで同一結果にする)
+function hash01(n: number): number {
+  let x = ((n | 0) + 0x6d2b79f5) | 0;
+  x = Math.imul(x ^ (x >>> 15), 1 | x);
+  x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+  return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
 }
 
 // ---- 共有リソース(ノイズ・スキャンライン・スナップショット) ----
@@ -159,68 +183,114 @@ function drawScanlines(ctx: CanvasRenderingContext2D, f: FrameInfo, alpha: numbe
 
 // ---- テーマ定義 ----
 
+// flash: 強度対象 = フラッシュの不透明度、ズームパルスの振幅
+const FLASH_PARAMS = {
+  flashOpacity: { min: 0, max: 0.8 } as ParamRange,
+  zoomAmp: { min: 0, max: 0.07 } as ParamRange,
+};
+// グレード(強度非連動)
+const FLASH_GRADE = { contrast: 0.15 };
+
 const flash: Theme = {
   id: 'flash',
   label: 'Flash',
   desc: 'ビート頭で白フラッシュ+ズームパルス',
+  usesIntensity: true,
   beatsPerCut: () => 2,
   render(ctx, drawVideo, f) {
     const pulse = Math.max(0, 1 - f.beatPhase / 0.35);
-    drawVideo({ scale: 1 + 0.07 * f.intensity * pulse * pulse });
-    contrastBoost(ctx, f, 0.15);
-    const flashA = 0.8 * f.intensity * Math.pow(Math.max(0, 1 - f.beatPhase / 0.2), 2);
+    drawVideo({ scale: 1 + lerpParam(FLASH_PARAMS.zoomAmp, f.intensity) * pulse * pulse });
+    contrastBoost(ctx, f, FLASH_GRADE.contrast);
+    const flashA =
+      lerpParam(FLASH_PARAMS.flashOpacity, f.intensity) *
+      Math.pow(Math.max(0, 1 - f.beatPhase / 0.2), 2);
     fillComposite(ctx, f, 'source-over', '#ffffff', flashA);
   },
+};
+
+// glitch: 強度対象 = RGBずらしの距離、グリッチバーストの発生頻度
+const GLITCH_PARAMS = {
+  shiftDist: { min: 4, max: 16 } as ParamRange,   // px
+  burstFreq: { min: 0.35, max: 1 } as ParamRange, // バーストが乗るビートの割合
+};
+// グレード・意匠(強度非連動)
+const GLITCH_GRADE = {
+  scanlineAlpha: 0.12,
+  tintAlpha: 0.1,
+  burstAlpha: 0.55,
+  cutBurstSec: 0.13,   // カット切替直後のバースト持続
+  beatBurstPhase: 0.1, // ビート頭バーストの位相窓
 };
 
 const glitch: Theme = {
   id: 'glitch',
   label: 'Glitch',
   desc: 'RGBずらし+スキャンライン、切替時にバースト',
+  usesIntensity: true,
   beatsPerCut: (bpm) => (bpm >= 140 ? 2 : 1),
   render(ctx, drawVideo, f) {
     drawVideo();
-    const burst = f.cutAge < 0.13 || f.beatPhase < 0.1;
-    if (burst && f.intensity > 0.03) {
-      const amp = 14 * f.intensity;
-      chromaShift(ctx, f, [
-        { color: '#ff0044', dx: (Math.random() - 0.5) * 2 * amp, dy: 0, alpha: 0.55 * f.intensity },
-        { color: '#00ffee', dx: (Math.random() - 0.5) * 2 * amp, dy: 0, alpha: 0.55 * f.intensity },
-      ]);
-      // 水平スライスをランダムにずらす
-      const s = getSnap(f.w, f.h);
-      const sx = s.getContext('2d')!;
-      sx.globalCompositeOperation = 'source-over';
-      sx.drawImage(ctx.canvas, 0, 0);
-      const n = 2 + ((Math.random() * 4) | 0);
-      for (let i = 0; i < n; i++) {
-        const y = Math.random() * f.h;
-        const sh = Math.max(8, Math.random() * f.h * 0.06);
-        const dx = (Math.random() - 0.5) * 2 * amp * 3;
-        ctx.drawImage(s, 0, y, f.w, sh, dx, y, f.w, sh);
+    if (f.intensity > 0) {
+      // ビート頭バーストは「頻度」: 強度に応じた割合のビートにだけ乗せる(決定論的)
+      const beatOn =
+        f.beatPhase < GLITCH_GRADE.beatBurstPhase &&
+        hash01(f.beatIndex) < lerpParam(GLITCH_PARAMS.burstFreq, f.intensity);
+      const burst = f.cutAge < GLITCH_GRADE.cutBurstSec || beatOn;
+      if (burst) {
+        const amp = lerpParam(GLITCH_PARAMS.shiftDist, f.intensity);
+        chromaShift(ctx, f, [
+          { color: '#ff0044', dx: (Math.random() - 0.5) * 2 * amp, dy: 0, alpha: GLITCH_GRADE.burstAlpha },
+          { color: '#00ffee', dx: (Math.random() - 0.5) * 2 * amp, dy: 0, alpha: GLITCH_GRADE.burstAlpha },
+        ]);
+        // 水平スライスをランダムにずらす
+        const s = getSnap(f.w, f.h);
+        const sx = s.getContext('2d')!;
+        sx.globalCompositeOperation = 'source-over';
+        sx.drawImage(ctx.canvas, 0, 0);
+        const n = 2 + ((Math.random() * 4) | 0);
+        for (let i = 0; i < n; i++) {
+          const y = Math.random() * f.h;
+          const sh = Math.max(8, Math.random() * f.h * 0.06);
+          const dx = (Math.random() - 0.5) * 2 * amp * 3;
+          ctx.drawImage(s, 0, y, f.w, sh, dx, y, f.w, sh);
+        }
       }
     }
-    drawScanlines(ctx, f, 0.06 + 0.1 * f.intensity);
-    fillComposite(ctx, f, 'soft-light', '#3355ff', 0.1 * f.intensity);
+    drawScanlines(ctx, f, GLITCH_GRADE.scanlineAlpha);
+    fillComposite(ctx, f, 'soft-light', '#3355ff', GLITCH_GRADE.tintAlpha);
   },
 };
+
+// vhs: 強度対象 = ノイズ量(粒子・スキャンライン・トラッキング帯)、色収差の強さ
+const VHS_PARAMS = {
+  noiseAlpha: { min: 0, max: 0.2 } as ParamRange,
+  scanlineAlpha: { min: 0, max: 0.12 } as ParamRange,
+  trackingFreq: { min: 0, max: 0.06 } as ParamRange, // 帯の発生確率/フレーム
+  chromaDist: { min: 0, max: 4.5 } as ParamRange,    // px
+  chromaAlpha: { min: 0, max: 0.25 } as ParamRange,
+};
+// グレード・意匠(強度非連動): 彩度低下・暖色・日付オーバーレイ
+const VHS_GRADE = { desaturate: 0.3, warmAlpha: 0.16 };
 
 const vhs: Theme = {
   id: 'vhs',
   label: 'VHS',
   desc: 'ノイズ+色収差+日付風オーバーレイ',
+  usesIntensity: true,
   beatsPerCut: () => 2,
   render(ctx, drawVideo, f) {
     drawVideo();
-    fillComposite(ctx, f, 'saturation', 'hsl(0 0% 50%)', 0.35 * f.intensity);
+    fillComposite(ctx, f, 'saturation', 'hsl(0 0% 50%)', VHS_GRADE.desaturate);
+    const cDist = lerpParam(VHS_PARAMS.chromaDist, f.intensity);
+    const cAlpha = lerpParam(VHS_PARAMS.chromaAlpha, f.intensity);
     chromaShift(ctx, f, [
-      { color: '#ff2266', dx: 2 + 2 * f.intensity, dy: 0, alpha: 0.22 * f.intensity },
-      { color: '#22ffcc', dx: -(2 + 2 * f.intensity), dy: 0, alpha: 0.22 * f.intensity },
+      { color: '#ff2266', dx: cDist, dy: 0, alpha: cAlpha },
+      { color: '#22ffcc', dx: -cDist, dy: 0, alpha: cAlpha },
     ]);
-    drawNoise(ctx, f, 0.05 + 0.13 * f.intensity);
-    drawScanlines(ctx, f, 0.1 * f.intensity);
+    drawNoise(ctx, f, lerpParam(VHS_PARAMS.noiseAlpha, f.intensity));
+    drawScanlines(ctx, f, lerpParam(VHS_PARAMS.scanlineAlpha, f.intensity));
     // ときどきトラッキングノイズの帯
-    if (Math.random() < 0.06 * f.intensity) {
+    if (Math.random() < lerpParam(VHS_PARAMS.trackingFreq, f.intensity)) {
       const y = Math.random() * f.h;
       const bh = f.h * 0.02;
       const s = getSnap(f.w, f.h);
@@ -229,7 +299,7 @@ const vhs: Theme = {
       sx.drawImage(ctx.canvas, 0, 0);
       ctx.drawImage(s, 0, y, f.w, bh, 24 * f.intensity, y, f.w, bh);
     }
-    fillComposite(ctx, f, 'soft-light', '#c98f2e', 0.16 * f.intensity);
+    fillComposite(ctx, f, 'soft-light', '#c98f2e', VHS_GRADE.warmAlpha);
     // 日付風オーバーレイ
     ctx.save();
     ctx.font = `500 ${Math.round(f.h * 0.026)}px ui-monospace, monospace`;
@@ -244,32 +314,46 @@ const vhs: Theme = {
   },
 };
 
+// mono: 強度対象 = 粒子ノイズ量、コントラストの強さ(+ビート明滅は0%で消える演出)
+const MONO_PARAMS = {
+  grainAlpha: { min: 0, max: 0.16 } as ParamRange,
+  contrast: { min: 0.3, max: 0.65 } as ParamRange, // minはグレードとして残す
+  beatFlash: { min: 0, max: 0.1 } as ParamRange,
+};
+// グレード・意匠(強度非連動): 完全モノクロ化、カット内ケンバーンズ
+const MONO_GRADE = { kenBurnsZoom: 0.05 };
+
 const mono: Theme = {
   id: 'mono',
   label: 'Mono',
   desc: 'モノクロ+粒子ノイズ+ハイコントラスト',
+  usesIntensity: true,
   beatsPerCut: (bpm) => (bpm >= 110 ? 4 : 2),
   render(ctx, drawVideo, f) {
     // カット内でゆっくり寄るケンバーンズ
-    drawVideo({ scale: 1 + 0.05 * f.cutProgress });
+    drawVideo({ scale: 1 + MONO_GRADE.kenBurnsZoom * f.cutProgress });
     fillComposite(ctx, f, 'saturation', 'hsl(0 0% 50%)', 1);
-    contrastBoost(ctx, f, 0.3 + 0.35 * f.intensity);
-    drawNoise(ctx, f, 0.06 + 0.1 * f.intensity, 'overlay');
+    contrastBoost(ctx, f, lerpParam(MONO_PARAMS.contrast, f.intensity));
+    drawNoise(ctx, f, lerpParam(MONO_PARAMS.grainAlpha, f.intensity), 'overlay');
     // ビート頭でわずかに明滅
-    const th = 0.1 * f.intensity * Math.max(0, 1 - f.beatPhase / 0.2);
+    const th = lerpParam(MONO_PARAMS.beatFlash, f.intensity) * Math.max(0, 1 - f.beatPhase / 0.2);
     fillComposite(ctx, f, 'source-over', '#ffffff', th);
   },
 };
+
+// clean: 強度対象なし(固定のグレードのみ。スライダー自体を非表示にする)
+const CLEAN_GRADE = { contrast: 0.12, warmAlpha: 0.05 };
 
 const clean: Theme = {
   id: 'clean',
   label: 'Clean',
   desc: 'エフェクトなし(グレードのみ)',
+  usesIntensity: false,
   beatsPerCut: () => 2,
   render(ctx, drawVideo, f) {
     drawVideo();
-    contrastBoost(ctx, f, 0.12 * f.intensity);
-    fillComposite(ctx, f, 'soft-light', '#ff9a3d', 0.05 * f.intensity);
+    contrastBoost(ctx, f, CLEAN_GRADE.contrast);
+    fillComposite(ctx, f, 'soft-light', '#ff9a3d', CLEAN_GRADE.warmAlpha);
   },
 };
 
