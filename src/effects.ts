@@ -231,12 +231,13 @@ const glitch: Theme = {
   render(ctx, drawVideo, f) {
     drawVideo();
     if (f.intensity > 0) {
-      // ビート頭バーストは「頻度」: 強度に応じた割合のビートにだけ乗せる(決定論的)
-      const beatOn =
-        f.beatPhase < GLITCH_GRADE.beatBurstPhase &&
-        hash01(f.beatIndex) < lerpParam(GLITCH_PARAMS.burstFreq, f.intensity);
-      const burst = f.cutAge < GLITCH_GRADE.cutBurstSec || beatOn;
-      if (burst) {
+      // 「発生頻度」: バースト窓(カット切替直後/ビート頭)を、ビート番号の
+      // 決定論ハッシュで強度に応じた割合だけ通す。テンポとカット密度が一致する
+      // テーマ設定でも(全ビート=カット頭でも)頻度差が観測できる
+      const gate = hash01(f.beatIndex) < lerpParam(GLITCH_PARAMS.burstFreq, f.intensity);
+      const windowOn =
+        f.cutAge < GLITCH_GRADE.cutBurstSec || f.beatPhase < GLITCH_GRADE.beatBurstPhase;
+      if (gate && windowOn) {
         const amp = lerpParam(GLITCH_PARAMS.shiftDist, f.intensity);
         chromaShift(ctx, f, [
           { color: '#ff0044', dx: (Math.random() - 0.5) * 2 * amp, dy: 0, alpha: GLITCH_GRADE.burstAlpha },
