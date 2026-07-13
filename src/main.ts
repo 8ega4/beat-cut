@@ -149,24 +149,40 @@ const presetList = $('#preset-list');
 const audioInput = $('#audio-input') as HTMLInputElement;
 const audioStatus = $('#audio-status');
 
+let presets: PresetTrack[] = [];
+let selectedPresetId: string | null = null;
+
 async function initPresets(): Promise<void> {
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}music/manifest.json`);
-    const presets: PresetTrack[] = await res.json();
-    presetList.innerHTML = '';
-    for (const p of presets) {
-      const btn = document.createElement('button');
-      btn.className = 'track-card';
-      btn.innerHTML = `<b>${escapeHtml(p.title)}</b><span>${escapeHtml(p.mood)}</span><span class="tc-bpm">${p.bpm} BPM</span>`;
-      btn.addEventListener('click', () => void selectPreset(p, btn));
-      presetList.appendChild(btn);
-    }
+    presets = await res.json();
+    renderPresetList();
   } catch {
     presetList.innerHTML = '<p class="error">プリセット楽曲を読み込めませんでした。ページを再読み込みしてください。</p>';
   }
 }
 
+// 選択中テーマに合う曲を先頭にレコメンド表示する(並び替えのみ。全曲どのテーマでも使える)
+function renderPresetList(): void {
+  if (presets.length === 0) return;
+  const ordered = [
+    ...presets.filter((p) => p.theme === state.theme),
+    ...presets.filter((p) => p.theme !== state.theme),
+  ];
+  presetList.innerHTML = '';
+  for (const p of ordered) {
+    const btn = document.createElement('button');
+    btn.className = 'track-card';
+    const badge = p.theme === state.theme ? '<span class="tc-badge">このテーマ向け</span>' : '';
+    btn.innerHTML = `<b>${escapeHtml(p.title)}</b>${badge}<span>${escapeHtml(p.mood)}</span><span class="tc-bpm">${p.bpm} BPM</span>`;
+    btn.classList.toggle('active', p.id === selectedPresetId);
+    btn.addEventListener('click', () => void selectPreset(p, btn));
+    presetList.appendChild(btn);
+  }
+}
+
 async function selectPreset(p: PresetTrack, btn: HTMLElement): Promise<void> {
+  selectedPresetId = p.id;
   markSelectedTrack(btn);
   audioStatus.textContent = '読み込み中…';
   try {
@@ -195,6 +211,7 @@ audioInput.addEventListener('change', () => {
 });
 
 async function handleAudioFile(f: File): Promise<void> {
+  selectedPresetId = null;
   markSelectedTrack(null);
   audioStatus.textContent = 'デコード中…';
   try {
@@ -352,6 +369,7 @@ function initThemes(): void {
       btn.classList.add('active');
       state.theme = t.id;
       updateIntensityVisibility();
+      renderPresetList(); // テーマに合う曲を先頭へ
       // 再生中: 次フレームから描画に即反映。カット密度の変更は次の再生開始時に適用
       if (renderer.playing) {
         planDirty = true;
