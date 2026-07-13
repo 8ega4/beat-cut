@@ -351,6 +351,7 @@ function initThemes(): void {
       row.querySelectorAll('.theme-chip').forEach((el) => el.classList.remove('active'));
       btn.classList.add('active');
       state.theme = t.id;
+      updateIntensityVisibility();
       // 再生中: 次フレームから描画に即反映。カット密度の変更は次の再生開始時に適用
       if (renderer.playing) {
         planDirty = true;
@@ -361,6 +362,11 @@ function initThemes(): void {
     });
     row.appendChild(btn);
   });
+}
+
+// cleanなど強度対象パラメータを持たないテーマではスライダーを隠す
+function updateIntensityVisibility(): void {
+  $('#intensity-row').hidden = !themeById(state.theme).usesIntensity;
 }
 
 ($('#intensity') as HTMLInputElement).addEventListener('input', (e) => {
@@ -508,6 +514,7 @@ const shareUrl = encodeURIComponent(location.origin + location.pathname);
 
 // ---- 起動 ----
 initThemes();
+updateIntensityVisibility();
 void initPresets();
 updatePreviewState();
 
