@@ -5,7 +5,19 @@ import type { Renderer } from './renderer';
 // 音声を<audio>タグ経由にしないこと(音ズレの主因)。
 // スパイクSP1実測: A/Vオフセット平均-6ms、30秒でのドリフト-4ms。
 
+// iOS(Chrome/Firefox含む全ブラウザがWebKit製)は isTypeSupported が
+// webmを「対応あり」と誤答する一方、実際に録画するとデータが出ない・
+// AudioContext.resume()が返らない等で進捗が0%のまま固まることがある。
+// 機能検出だけに頼らずUA判定で確実に弾く。
+function isIOS(): boolean {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  // iPadOS 13+はデスクトップUAを名乗るため、タッチ対応のMacintoshで判定
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
 export function exportMime(): string | null {
+  if (isIOS()) return null;
   if (typeof MediaRecorder === 'undefined') return null;
   if (!('captureStream' in HTMLCanvasElement.prototype)) return null;
   for (const m of ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus']) {
@@ -65,7 +77,7 @@ export async function exportVideo(renderer: Renderer, opts: ExportOptions): Prom
   try {
     // 全クリップを事前デコード + エンコーダのウォームアップ(捨て録り)。
     // 初回書き出しでエンコーダ初期化中のフレーム落ちが起きるのを防ぐ
-    await renderer.prime();
+    await withTimeout(renderer.prime(), 10_000, '動画の準備がタイムアウトしました');
     const warm = new MediaRecorder(new MediaStream([vtrack]), {
       mimeType: mime,
       videoBitsPerSecond: 4_000_000,
@@ -82,22 +94,27 @@ export async function exportVideo(renderer: Renderer, opts: ExportOptions): Prom
     // 本録画: キャプチャは30fpsにペーシングしてエンコーダ負荷を安定させる
     let lastCap = 0;
     rec.start(1000);
-    await new Promise<void>((resolve, reject) => {
-      renderer.onEnded = () => resolve();
-      renderer.onTime = (t) => opts.onProgress(Math.min(1, t / opts.duration));
-      renderer
-        .start({
-          extraAudioOut: dest,
-          onFrameDrawn: () => {
-            const now = performance.now();
-            if (now - lastCap >= 31) {
-              lastCap = now;
-              vtrack.requestFrame();
-            }
-          },
-        })
-        .catch(reject);
-    });
+    await withTimeout(
+      new Promise<void>((resolve, reject) => {
+        renderer.onEnded = () => resolve();
+        renderer.onTime = (t) => opts.onProgress(Math.min(1, t / opts.duration));
+        renderer
+          .start({
+            extraAudioOut: dest,
+            onFrameDrawn: () => {
+              const now = performance.now();
+              if (now - lastCap >= 31) {
+                lastCap = now;
+                vtrack.requestFrame();
+              }
+            },
+          })
+          .catch(reject);
+      }),
+      // 想定尺+10秒を超えたら録画エンジンが応答不能になったと判断する
+      opts.duration * 1000 + 10_000,
+      '録画がタイムアウトしました。ブラウザやOSの制限で書き出しに対応していない可能性があります。',
+    );
     rec.stop();
     await stopped;
   } finally {
@@ -107,4 +124,11 @@ export async function exportVideo(renderer: Renderer, opts: ExportOptions): Prom
     canvas.height = prevH;
   }
   return new Blob(chunks, { type: 'video/webm' });
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
 }
