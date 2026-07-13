@@ -3,24 +3,24 @@
     "id": "neon-drive",
     "title": "Neon Drive",
     "mood": "エレクトロ / 疾走感",
-    "bpm": 120,
-    "beatOffsetSec": 0,
-    "file": "neon-drive.wav"
+    "bpm": 100,
+    "beatOffsetSec": 0.0026,
+    "file": "neon-drive.webm"
   },
   {
     "id": "midnight-steps",
     "title": "Midnight Steps",
     "mood": "チル / 夜散歩",
-    "bpm": 95,
-    "beatOffsetSec": 0,
-    "file": "midnight-steps.wav"
+    "bpm": 123.3,
+    "beatOffsetSec": 0.4395,
+    "file": "midnight-steps.webm"
   },
   {
     "id": "hyper-bloom",
     "title": "Hyper Bloom",
     "mood": "ハイパーポップ / 高揚",
-    "bpm": 140,
-    "beatOffsetSec": 0,
-    "file": "hyper-bloom.wav"
+    "bpm": 140.3,
+    "beatOffsetSec": 0.1416,
+    "file": "hyper-bloom.webm"
   }
 ]
