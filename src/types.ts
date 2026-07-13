@@ -13,6 +13,7 @@ export interface PresetTrack {
   id: string;
   title: string;
   mood: string;
+  theme: ThemeId; // レコメンド表示用。選択の強制はしない
   bpm: number;
   beatOffsetSec: number;
   file: string;

@@ -1,26 +1,74 @@
 [
   {
+    "id": "hyper-bloom",
+    "title": "Hyper Bloom",
+    "mood": "ハイパーポップ / 高揚",
+    "theme": "flash",
+    "bpm": 140.3,
+    "beatOffsetSec": 0.1416,
+    "file": "hyper-bloom.webm"
+  },
+  {
+    "id": "strobe-rush",
+    "title": "Strobe Rush",
+    "mood": "エレクトロ / ストロボ",
+    "theme": "flash",
+    "bpm": 128,
+    "beatOffsetSec": 0,
+    "file": "hyper-bloom.webm"
+  },
+  {
+    "id": "signal-break",
+    "title": "Signal Break",
+    "mood": "グリッチ / 断続ビート",
+    "theme": "glitch",
+    "bpm": 130,
+    "beatOffsetSec": 0,
+    "file": "hyper-bloom.webm"
+  },
+  {
     "id": "neon-drive",
     "title": "Neon Drive",
     "mood": "エレクトロ / 疾走感",
+    "theme": "vhs",
     "bpm": 100,
     "beatOffsetSec": 0.0026,
+    "file": "neon-drive.webm"
+  },
+  {
+    "id": "cassette-memory",
+    "title": "Cassette Memory",
+    "mood": "ローファイ / 追憶",
+    "theme": "vhs",
+    "bpm": 90,
+    "beatOffsetSec": 0,
     "file": "neon-drive.webm"
   },
   {
     "id": "midnight-steps",
     "title": "Midnight Steps",
     "mood": "チル / 夜散歩",
+    "theme": "mono",
     "bpm": 123.3,
     "beatOffsetSec": 0.4395,
     "file": "midnight-steps.webm"
   },
   {
-    "id": "hyper-bloom",
-    "title": "Hyper Bloom",
-    "mood": "ハイパーポップ / 高揚",
-    "bpm": 140.3,
-    "beatOffsetSec": 0.1416,
-    "file": "hyper-bloom.webm"
+    "id": "concrete",
+    "title": "Concrete",
+    "mood": "インダストリアル / 硬質",
+    "theme": "mono",
+    "bpm": 126,
+    "beatOffsetSec": 0,
+    "file": "midnight-steps.webm"
+  },
+  {
+    "id": "daylight",
+    "title": "Daylight",
+    "mood": "アコースティック / 昼下がり",
+    "theme": "clean",
+    "bpm": 110,
+    "beatOffsetSec": 0,
+    "file": "neon-drive.webm"
   }
 ]
